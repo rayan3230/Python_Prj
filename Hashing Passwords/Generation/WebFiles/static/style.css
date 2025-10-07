@@ -1,0 +1,10 @@
+:root{--bg:#0b0f12;--card:#15181b;--accent:#1e90ff;--muted:#9ca3af;--danger:#dc2626}
+body{font-family:Inter,Segoe UI,Arial,Helvetica,sans-serif;background:var(--bg);color:#e5e7eb;margin:0;display:flex;align-items:center;justify-content:center;height:100vh}
+.card{background:var(--card);padding:28px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.6);width:360px}
+h1,h2{margin:0 0 12px 0}
+label{display:block;margin-top:8px;font-size:14px;color:var(--muted)}
+input{width:100%;padding:10px;margin-top:6px;border-radius:6px;border:1px solid rgba(255,255,255,.06);background:transparent;color:inherit}
+.actions{display:flex;gap:8px;margin-top:14px}
+.btn{display:inline-block;padding:10px 14px;background:var(--accent);color:#fff;border-radius:6px;text-decoration:none}
+.btn-secondary{background:transparent;border:1px solid rgba(255,255,255,.06)}
+.flash{background:rgba(30,144,255,.08);padding:8px;border-radius:6px;margin-bottom:8px;color:var(--accent)}
