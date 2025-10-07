@@ -96,4 +96,7 @@ def logout():
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # bind to 0.0.0.0 so the app is reachable from other devices on the same LAN
+    # Example: from another device on the same Wi‑Fi open http://192.168.100.250:5000
+    # Note: you may need to allow port 5000 through your Windows firewall (see use.md)
+    app.run(host="0.0.0.0", port=5000, debug=True)
