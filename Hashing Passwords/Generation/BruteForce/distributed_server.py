@@ -7,6 +7,7 @@ import socket
 import threading
 import json
 import os
+import sys
 from datetime import datetime
 
 
@@ -242,6 +243,38 @@ class DistributedTestServer:
             self.server_socket.close()
 
 
+def clear_terminal():
+    """Clear the terminal screen"""
+    os.system('clear' if os.name == 'posix' else 'cls')
+
+
+def print_banner():
+    """Print the server banner"""
+    clear_terminal()
+    print("\n" + "╔" + "═"*78 + "╗")
+    print("║" + " "*20 + "DISTRIBUTED PASSWORD TESTING SERVER" + " "*23 + "║")
+    print("╚" + "═"*78 + "╝")
+    print("\n📋 Available Commands:")
+    print("  ┌─────────────────────────────────────────────────────────────────────────┐")
+    print("  │ Client Management:                                                      │")
+    print("  │   list              - List all connected clients                        │")
+    print("  │   send <ip>         - Send password testing task to specific client     │")
+    print("  │   broadcast         - Send task to all connected clients                │")
+    print("  │                                                                          │")
+    print("  │ Password Generation & Testing:                                          │")
+    print("  │   generate          - Generate passwords and test (uses client resources)│")
+    print("  │   gentest <ip>      - Generate & test on specific client                │")
+    print("  │                                                                          │")
+    print("  │ Utility:                                                                │")
+    print("  │   clear             - Clear the terminal screen                         │")
+    print("  │   help              - Show this help message                            │")
+    print("  │   status            - Show server status and statistics                 │")
+    print("  │   logs              - Show recent client logs                           │")
+    print("  │   quit              - Shut down the server                              │")
+    print("  └─────────────────────────────────────────────────────────────────────────┘")
+    print("")
+
+
 def interactive_server():
     """Run server with interactive command interface"""
     server = DistributedTestServer()
@@ -250,34 +283,65 @@ def interactive_server():
     server_thread = threading.Thread(target=server.start, daemon=True)
     server_thread.start()
     
-    print("\n" + "="*80)
-    print("DISTRIBUTED PASSWORD TESTING SERVER")
-    print("="*80)
-    print("\nCommands:")
-    print("  list          - List connected clients")
-    print("  send <ip>     - Send task to specific client")
-    print("  broadcast     - Send task to all clients")
-    print("  quit          - Shut down server")
-    print("="*80 + "\n")
+    print_banner()
     
     try:
         while True:
-            cmd = input("server> ").strip().lower()
+            cmd = input("\n\033[1;36mserver>\033[0m ").strip()
             
-            if cmd == "quit":
+            if not cmd:
+                continue
+                
+            cmd_lower = cmd.lower()
+            
+            if cmd_lower == "quit":
+                print("\n\033[1;33m🔌 Shutting down server...\033[0m")
                 break
-            elif cmd == "list":
+            elif cmd_lower == "clear":
+                print_banner()
+            elif cmd_lower == "help":
+                print_banner()
+            elif cmd_lower == "status":
+                clients = server.list_clients()
+                print("\n" + "─"*80)
+                print(f"📊 Server Status:")
+                print(f"   • Connected clients: {len(clients)}")
+                print(f"   • Server address: {server.host}:{server.port}")
+                print(f"   • Logs directory: {server.logs_dir}")
+                # Count log files
+                try:
+                    log_files = [f for f in os.listdir(server.logs_dir) if f.endswith('.txt')]
+                    print(f"   • Total log files: {len(log_files)}")
+                except:
+                    pass
+                print("─"*80)
+            elif cmd_lower == "logs":
+                try:
+                    log_files = sorted([f for f in os.listdir(server.logs_dir) if f.endswith('.txt')])
+                    if log_files:
+                        print("\n" + "─"*80)
+                        print("📄 Recent Log Files (last 10):")
+                        for f in log_files[-10:]:
+                            print(f"   • {f}")
+                        print("─"*80)
+                    else:
+                        print("\n⚠️  No log files found.")
+                except Exception as e:
+                    print(f"\n❌ Error reading logs: {e}")
+            elif cmd_lower == "list":
                 clients = server.list_clients()
                 if clients:
-                    print(f"\nConnected clients ({len(clients)}):")
-                    for addr, name in clients:
-                        print(f"  - {name} ({addr[0]}:{addr[1]})")
+                    print("\n" + "─"*80)
+                    print(f"👥 Connected Clients ({len(clients)}):")
+                    for idx, (addr, name) in enumerate(clients, 1):
+                        print(f"   {idx}. \033[1;32m{name}\033[0m - {addr[0]}:{addr[1]}")
+                    print("─"*80)
                 else:
-                    print("\nNo clients connected.")
-            elif cmd.startswith("send "):
+                    print("\n⚠️  No clients connected.")
+            elif cmd_lower.startswith("send "):
                 parts = cmd.split()
                 if len(parts) < 2:
-                    print("Usage: send <ip>")
+                    print("\n❌ Usage: send <ip>")
                     continue
                     
                 target_ip = parts[1]
@@ -291,24 +355,26 @@ def interactive_server():
                         break
                         
                 if not target_addr:
-                    print(f"No client found with IP: {target_ip}")
+                    print(f"\n❌ No client found with IP: {target_ip}")
                     continue
                     
                 # Get task details
-                print("\nEnter task details:")
-                target_url = input("Target URL [http://127.0.0.1:5000/login]: ").strip() or "http://127.0.0.1:5000/login"
-                username = input("Username: ").strip()
-                password_file = input("Password file path: ").strip()
+                print("\n" + "─"*80)
+                print("📝 Enter Task Details:")
+                target_url = input("   Target URL [http://127.0.0.1:5000/login]: ").strip() or "http://127.0.0.1:5000/login"
+                username = input("   Username: ").strip()
+                password_file = input("   Password file path: ").strip()
                 
                 if not username or not password_file:
-                    print("Username and password file are required!")
+                    print("❌ Username and password file are required!")
                     continue
                     
                 try:
                     with open(password_file, 'r', encoding='utf-8') as f:
                         passwords = [line.strip() for line in f if line.strip()]
+                    print(f"✅ Loaded {len(passwords)} passwords from file")
                 except Exception as e:
-                    print(f"Error reading password file: {e}")
+                    print(f"❌ Error reading password file: {e}")
                     continue
                     
                 task_config = {
@@ -319,31 +385,34 @@ def interactive_server():
                 }
                 
                 if server.send_task_to_client(target_addr, task_config):
-                    print(f"Task sent successfully to {target_addr}")
+                    print(f"✅ Task sent successfully to {target_addr[0]}")
                 else:
-                    print("Failed to send task")
+                    print("❌ Failed to send task")
+                print("─"*80)
                     
-            elif cmd == "broadcast":
+            elif cmd_lower == "broadcast":
                 clients = server.list_clients()
                 if not clients:
-                    print("No clients connected.")
+                    print("\n⚠️  No clients connected.")
                     continue
                     
                 # Get task details
-                print("\nEnter task details for broadcast:")
-                target_url = input("Target URL [http://127.0.0.1:5000/login]: ").strip() or "http://127.0.0.1:5000/login"
-                username = input("Username: ").strip()
-                password_file = input("Password file path: ").strip()
+                print("\n" + "─"*80)
+                print("📡 Enter Task Details for Broadcast:")
+                target_url = input("   Target URL [http://127.0.0.1:5000/login]: ").strip() or "http://127.0.0.1:5000/login"
+                username = input("   Username: ").strip()
+                password_file = input("   Password file path: ").strip()
                 
                 if not username or not password_file:
-                    print("Username and password file are required!")
+                    print("❌ Username and password file are required!")
                     continue
                     
                 try:
                     with open(password_file, 'r', encoding='utf-8') as f:
                         passwords = [line.strip() for line in f if line.strip()]
+                    print(f"✅ Loaded {len(passwords)} passwords from file")
                 except Exception as e:
-                    print(f"Error reading password file: {e}")
+                    print(f"❌ Error reading password file: {e}")
                     continue
                     
                 task_config = {
@@ -354,10 +423,158 @@ def interactive_server():
                 }
                 
                 count = server.broadcast_task(task_config)
-                print(f"Task broadcast to {count} client(s)")
+                print(f"✅ Task broadcast to {count} client(s)")
+                print("─"*80)
+                
+            elif cmd_lower == "generate" or cmd_lower.startswith("gentest"):
+                clients = server.list_clients()
+                
+                # Determine target client
+                target_addr = None
+                if cmd_lower.startswith("gentest "):
+                    parts = cmd.split()
+                    if len(parts) < 2:
+                        print("\n❌ Usage: gentest <ip>")
+                        continue
+                    target_ip = parts[1]
+                    for addr, name in clients:
+                        if addr[0] == target_ip:
+                            target_addr = addr
+                            break
+                    if not target_addr:
+                        print(f"\n❌ No client found with IP: {target_ip}")
+                        continue
+                else:
+                    if not clients:
+                        print("\n⚠️  No clients connected.")
+                        continue
+                    if len(clients) == 1:
+                        target_addr = clients[0][0]
+                    else:
+                        print("\n👥 Multiple clients available. Choose one:")
+                        for idx, (addr, name) in enumerate(clients, 1):
+                            print(f"   {idx}. {name} ({addr[0]})")
+                        choice = input("Enter number: ").strip()
+                        try:
+                            idx = int(choice) - 1
+                            target_addr = clients[idx][0]
+                        except:
+                            print("❌ Invalid choice")
+                            continue
+                
+                # Get password generation options
+                print("\n" + "─"*80)
+                print("🔐 Password Generation & Testing Configuration:")
+                print("\n📋 Generation Mode:")
+                print("   1. Random (character-based)")
+                print("   2. AI-style (keyword-based, heuristic)")
+                mode = input("Select mode [1]: ").strip() or "1"
+                
+                gen_config = {}
+                
+                if mode == "2":
+                    # AI-style generation
+                    print("\n🤖 AI-Style Options:")
+                    keywords = input("   Keywords (comma-separated): ").strip()
+                    if not keywords:
+                        print("❌ Keywords are required for AI-style generation!")
+                        continue
+                    gen_config["mode"] = "ai"
+                    gen_config["keywords"] = [k.strip() for k in keywords.split(",")]
+                    
+                    capitalize = input("   Capitalize words? [Y/n]: ").strip().lower()
+                    gen_config["capitalize"] = capitalize != "n"
+                    
+                    leet = input("   Apply leet-speak? [Y/n]: ").strip().lower()
+                    gen_config["leet"] = leet != "n"
+                    
+                    insert_symbols = input("   Insert symbols between words? [Y/n]: ").strip().lower()
+                    gen_config["insert_symbols"] = insert_symbols != "n"
+                    
+                    append_numbers = input("   Append random numbers? [Y/n]: ").strip().lower()
+                    gen_config["append_numbers"] = append_numbers != "n"
+                    
+                    if gen_config["insert_symbols"]:
+                        symbols = input("   Symbol set [!@#$%&*()-_=+]: ").strip() or "!@#$%&*()-_=+"
+                        gen_config["symbols"] = symbols
+                else:
+                    # Random generation
+                    print("\n🎲 Random Generation Options:")
+                    gen_config["mode"] = "random"
+                    
+                    use_lower = input("   Include lowercase (a-z)? [Y/n]: ").strip().lower()
+                    gen_config["use_lower"] = use_lower != "n"
+                    
+                    use_upper = input("   Include uppercase (A-Z)? [Y/n]: ").strip().lower()
+                    gen_config["use_upper"] = use_upper != "n"
+                    
+                    use_digits = input("   Include digits (0-9)? [Y/n]: ").strip().lower()
+                    gen_config["use_digits"] = use_digits != "n"
+                    
+                    use_symbols = input("   Include symbols? [y/N]: ").strip().lower()
+                    gen_config["use_symbols"] = use_symbols == "y"
+                    
+                    if gen_config["use_symbols"]:
+                        print("   Symbol options:")
+                        print("      1. Safe set (!@#$%&*()-_=+)")
+                        print("      2. All punctuation")
+                        print("      3. Custom")
+                        sym_choice = input("   Select [1]: ").strip() or "1"
+                        if sym_choice == "2":
+                            gen_config["symbol_set"] = "all"
+                        elif sym_choice == "3":
+                            custom = input("   Enter custom symbols: ").strip()
+                            gen_config["symbol_set"] = "custom"
+                            gen_config["custom_symbols"] = custom
+                        else:
+                            gen_config["symbol_set"] = "safe"
+                
+                # Common options
+                print("\n📊 Generation Parameters:")
+                try:
+                    count = int(input("   Number of passwords [100]: ").strip() or "100")
+                except:
+                    count = 100
+                gen_config["count"] = count
+                
+                try:
+                    length = int(input("   Password length [12]: ").strip() or "12")
+                except:
+                    length = 12
+                gen_config["length"] = length
+                
+                # Testing options
+                print("\n🌐 Testing Configuration:")
+                target_url = input("   Target URL [http://127.0.0.1:5000/login]: ").strip() or "http://127.0.0.1:5000/login"
+                username = input("   Username to test: ").strip()
+                
+                if not username:
+                    print("❌ Username is required!")
+                    continue
+                
+                stop_after = input("   Stop after first success? [Y/n]: ").strip().lower()
+                stop_after_first = stop_after != "n"
+                
+                # Send generate-and-test task
+                task_config = {
+                    "type": "generate_and_test",
+                    "generation": gen_config,
+                    "testing": {
+                        "target_url": target_url,
+                        "username": username,
+                        "stop_after_first": stop_after_first
+                    }
+                }
+                
+                print(f"\n🚀 Sending generation & testing task to client...")
+                if server.send_task_to_client(target_addr, task_config):
+                    print(f"✅ Task sent successfully!")
+                else:
+                    print("❌ Failed to send task")
+                print("─"*80)
                 
             else:
-                print("Unknown command. Type 'list', 'send', 'broadcast', or 'quit'")
+                print(f"\n❌ Unknown command: '{cmd}'. Type 'help' to see available commands.")
                 
     except KeyboardInterrupt:
         print("\n\nShutting down...")

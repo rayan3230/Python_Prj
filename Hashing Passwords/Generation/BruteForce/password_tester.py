@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 class PasswordTester:
-    def __init__(self, target_url, username, passwords, stop_after_first=True):
+    def __init__(self, target_url, username, passwords, stop_after_first=True, debug=False):
         """
         Initialize the password tester
         
@@ -19,11 +19,13 @@ class PasswordTester:
             username: The username to test with
             passwords: List of passwords to test
             stop_after_first: Stop after first successful password
+            debug: Enable debug output (shows response URLs and snippets)
         """
         self.target_url = target_url
         self.username = username
         self.passwords = passwords
         self.stop_after_first = stop_after_first
+        self.debug = debug
         self.session = requests.Session()
         self.results = []
         self.log_messages = []
@@ -65,18 +67,34 @@ class PasswordTester:
         
         try:
             final_url = resp.url or ""
+            status_code = resp.status_code
+            
+            # Debug output
+            if self.debug:
+                self.log(f"DEBUG - Status: {status_code}, Final URL: {final_url}")
+                self.log(f"DEBUG - Response snippet: {resp.text[:200]}...")
+            
             # Check if redirected to dashboard (successful login)
             if "/dashboard" in final_url:
                 success = True
-        except Exception:
+            # Also check for successful status code and no error messages
+            elif status_code == 200 and "Invalid" not in resp.text and "incorrect" not in resp.text.lower():
+                # Some apps might not redirect but show success differently
+                if "welcome" in resp.text.lower() or "success" in resp.text.lower():
+                    success = True
+        except Exception as e:
             success = False
+            if self.debug:
+                self.log(f"DEBUG - Exception checking response: {e}")
             
         result = {
             "success": success,
             "password": password,
             "time_taken": took,
             "note": "OK" if success else "FAIL",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "final_url": final_url if 'final_url' in locals() else "",
+            "status_code": status_code if 'status_code' in locals() else 0
         }
         
         return result

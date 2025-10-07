@@ -6,8 +6,23 @@ Connects to server, receives tasks, runs password tests, and sends logs back
 import socket
 import json
 import os
+import sys
+import secrets
+import string
 from datetime import datetime
+from pathlib import Path
 from password_tester import PasswordTester
+
+# Add parent directory to path to import PasswordGeneration
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(parent_dir))
+
+try:
+    from PasswordGeneration import build_charset, generate_many
+except ImportError:
+    print("Warning: Could not import PasswordGeneration module. Password generation features may not work.")
+    build_charset = None
+    generate_many = None
 
 
 class DistributedTestClient:
@@ -135,23 +150,166 @@ class DistributedTestClient:
                 return False
         return False
         
+    def generate_passwords_ai(self, keywords, count, length, capitalize=True, leet=True, 
+                             insert_symbols=True, symbols="!@#$%&*()-_=+", append_numbers=True):
+        """Generate passwords using AI-style heuristic method"""
+        def apply_leet(s):
+            mapping = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "$", "t": "7"})
+            return s.translate(mapping)
+        
+        def insert_symbol_between(words, symbols):
+            sep = secrets.choice(symbols) if symbols else ""
+            return sep.join(words)
+        
+        passwords = []
+        for _ in range(count):
+            # Pick 1 or 2 keywords
+            parts = [secrets.choice(keywords)]
+            if secrets.randbelow(100) < 40 and len(keywords) > 1:
+                other = secrets.choice(keywords)
+                if other != parts[0]:
+                    parts.append(other)
+            
+            # Insert symbol between parts
+            pwd = insert_symbol_between(parts, symbols) if insert_symbols and len(parts) > 1 else "".join(parts)
+            
+            # Apply capitalization or leet
+            if capitalize and secrets.choice((True, False)):
+                pwd = pwd.title()
+            if leet and secrets.choice((True, False)):
+                pwd = apply_leet(pwd.lower())
+            
+            # Append numbers
+            if append_numbers:
+                digits = secrets.choice((1, 2, 3, 4))
+                num = ''.join(secrets.choice(string.digits) for _ in range(digits))
+                pwd = pwd + num
+            
+            # Adjust length
+            if len(pwd) > length:
+                pwd = pwd[:length]
+            while len(pwd) < length:
+                choice = secrets.choice((string.ascii_letters, string.digits, symbols))
+                pwd += secrets.choice(choice)
+            
+            passwords.append(pwd)
+        
+        return passwords
+    
+    def generate_passwords_random(self, count, length, use_lower=True, use_upper=True, 
+                                  use_digits=True, use_symbols=False, symbol_set="safe", 
+                                  custom_symbols=""):
+        """Generate random passwords using character sets"""
+        if build_charset is None or generate_many is None:
+            self.log("Error: PasswordGeneration module not available")
+            return []
+        
+        # Determine symbol settings
+        if symbol_set == "all":
+            use_symbols_flag = True
+            extra_symbols = ""
+        elif symbol_set == "custom":
+            use_symbols_flag = False
+            extra_symbols = custom_symbols
+        elif symbol_set == "safe":
+            use_symbols_flag = False
+            extra_symbols = "!@#$%&*()-_=+"
+        else:
+            use_symbols_flag = False
+            extra_symbols = ""
+        
+        try:
+            charset = build_charset(
+                use_lower=use_lower,
+                use_upper=use_upper,
+                use_digits=use_digits,
+                use_symbols=use_symbols_flag,
+                extra_symbols=extra_symbols
+            )
+            return generate_many(count, length, charset)
+        except Exception as e:
+            self.log(f"Error generating passwords: {e}")
+            return []
+    
     def execute_task(self, task_data):
         """
         Execute a password testing task
         
         Args:
             task_data: Dictionary containing:
-                - target_url: URL to test
-                - username: Username to test
-                - passwords: List of passwords
+                - type: "test" or "generate_and_test"
+                - target_url: URL to test (for test type)
+                - username: Username to test (for test type)
+                - passwords: List of passwords (for test type)
                 - stop_after_first: Boolean (optional)
+                - generation: Generation config (for generate_and_test type)
+                - testing: Testing config (for generate_and_test type)
         """
-        target_url = task_data.get("target_url")
-        username = task_data.get("username")
-        passwords = task_data.get("passwords", [])
-        stop_after_first = task_data.get("stop_after_first", True)
+        task_type = task_data.get("type", "test")
         
-        self.log(f"Executing task: Testing {len(passwords)} passwords for {username}@{target_url}")
+        if task_type == "generate_and_test":
+            self.log("Received generate-and-test task")
+            
+            # Generate passwords
+            gen_config = task_data.get("generation", {})
+            mode = gen_config.get("mode", "random")
+            count = gen_config.get("count", 100)
+            length = gen_config.get("length", 12)
+            
+            self.log(f"Generating {count} passwords ({mode} mode)...")
+            
+            if mode == "ai":
+                passwords = self.generate_passwords_ai(
+                    keywords=gen_config.get("keywords", []),
+                    count=count,
+                    length=length,
+                    capitalize=gen_config.get("capitalize", True),
+                    leet=gen_config.get("leet", True),
+                    insert_symbols=gen_config.get("insert_symbols", True),
+                    symbols=gen_config.get("symbols", "!@#$%&*()-_=+"),
+                    append_numbers=gen_config.get("append_numbers", True)
+                )
+            else:
+                passwords = self.generate_passwords_random(
+                    count=count,
+                    length=length,
+                    use_lower=gen_config.get("use_lower", True),
+                    use_upper=gen_config.get("use_upper", True),
+                    use_digits=gen_config.get("use_digits", True),
+                    use_symbols=gen_config.get("use_symbols", False),
+                    symbol_set=gen_config.get("symbol_set", "safe"),
+                    custom_symbols=gen_config.get("custom_symbols", "")
+                )
+            
+            self.log(f"Generated {len(passwords)} passwords")
+            
+            # Save passwords to file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            passwords_file = Path(__file__).resolve().parent / f"generated_passwords_{timestamp}.txt"
+            try:
+                with open(passwords_file, 'w', encoding='utf-8') as f:
+                    for pwd in passwords:
+                        f.write(pwd + '\n')
+                self.log(f"Saved passwords to: {passwords_file.name}")
+            except Exception as e:
+                self.log(f"Error saving passwords: {e}")
+            
+            # Now test them
+            test_config = task_data.get("testing", {})
+            target_url = test_config.get("target_url")
+            username = test_config.get("username")
+            stop_after_first = test_config.get("stop_after_first", True)
+            
+            self.log(f"Testing passwords for {username}@{target_url}")
+            
+        else:
+            # Regular testing task
+            target_url = task_data.get("target_url")
+            username = task_data.get("username")
+            passwords = task_data.get("passwords", [])
+            stop_after_first = task_data.get("stop_after_first", True)
+            
+            self.log(f"Executing task: Testing {len(passwords)} passwords for {username}@{target_url}")
         
         # Create password tester and run
         tester = PasswordTester(
@@ -235,25 +393,29 @@ class DistributedTestClient:
 
 def main():
     """Main entry point for the client"""
-    print("="*80)
-    print("DISTRIBUTED PASSWORD TESTING CLIENT")
-    print("="*80)
+    os.system('clear' if os.name == 'posix' else 'cls')
+    print("\n" + "╔" + "═"*78 + "╗")
+    print("║" + " "*20 + "DISTRIBUTED PASSWORD TESTING CLIENT" + " "*23 + "║")
+    print("╚" + "═"*78 + "╝\n")
     
     # Get server details
-    server_host = input("Enter server IP address [127.0.0.1]: ").strip() or "127.0.0.1"
-    server_port = input("Enter server port [5051]: ").strip() or "5051"
-    client_name = input("Enter client name [auto]: ").strip() or None
+    print("📡 Server Connection Settings:")
+    server_host = input("   Server IP address [127.0.0.1]: ").strip() or "127.0.0.1"
+    server_port = input("   Server port [5051]: ").strip() or "5051"
+    client_name = input("   Client name [auto]: ").strip() or None
     
     try:
         server_port = int(server_port)
     except ValueError:
-        print("Invalid port number!")
+        print("\n❌ Invalid port number!")
         return
-        
-    print("\nStarting client...")
-    print(f"Server: {server_host}:{server_port}")
-    print(f"Client Name: {client_name or 'auto-generated'}")
-    print("\nPress Ctrl+C to stop the client\n")
+    
+    print("\n" + "─"*80)
+    print("🚀 Starting client...")
+    print(f"   • Server: \033[1;32m{server_host}:{server_port}\033[0m")
+    print(f"   • Client Name: \033[1;32m{client_name or 'auto-generated'}\033[0m")
+    print("   • Press \033[1;31mCtrl+C\033[0m to stop the client")
+    print("─"*80 + "\n")
     
     client = DistributedTestClient(server_host, server_port, client_name)
     client.run()
